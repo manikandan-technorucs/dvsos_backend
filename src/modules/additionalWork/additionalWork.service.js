@@ -837,12 +837,11 @@ const createRequest = async (jobCardIdentifier, payload, user) => {
 
   try {
     const jobCardForMsg = {
-      ...result.jobCard,
-      customer: {
-        ...(result.jobCard.customer || {}),
-        mobileNo: '8825971339'
-      }
+      ...result.jobCard
     };
+
+    console.log('--- DEBUG: ATTEMPTING TO SEND WHATSAPP MESSAGE ---');
+    console.log('Customer Mobile:', jobCardForMsg.customer?.mobileNo);
 
     await sendAdditionalWorkApproval({
       jobCard: jobCardForMsg,
@@ -850,8 +849,11 @@ const createRequest = async (jobCardIdentifier, payload, user) => {
       services: result.services,
       explanation: result.explanation
     });
+
+    console.log('--- DEBUG: WHATSAPP MESSAGE SENT TO TWILIO ---');
   } catch (error) {
-    console.error('Failed to send Twilio WhatsApp message:', error);
+    console.error('--- DEBUG: FAILED TO SEND WHATSAPP MESSAGE ---');
+    console.error(error);
   }
 
   return {

@@ -44,6 +44,7 @@ class TwilioProvider {
         messagePayload.body = body;
       }
 
+      console.log('--- DEBUG: TWILIO API PAYLOAD ---', JSON.stringify(messagePayload, null, 2));
       return await client.messages.create(messagePayload);
     } catch (error) {
       throw toTwilioProviderError(error);

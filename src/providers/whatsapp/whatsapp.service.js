@@ -104,9 +104,7 @@ const sendAdditionalWorkApproval = async ({ jobCard, approval, services, explana
 
   return sendWhatsAppMessage({
     to: jobCard.customer?.mobileNo,
-    body,
-    contentSid: 'HX09464b05964a13afc5fc48c7cf92bd7c',
-    contentVariables
+    body
   });
 };
 
