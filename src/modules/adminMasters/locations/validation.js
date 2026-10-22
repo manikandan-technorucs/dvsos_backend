@@ -14,7 +14,8 @@ const validation = createValidation([
     maxLength: 6,
     regex: /^[1-9][0-9]{5}$/,
     regexMessage: 'Pincode must be exactly 6 digits and cannot start with 0'
-  }
+  },
+  { name: 'kioskKey', type: 'string', required: false, maxLength: 100 }
 ]);
 
 const slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;

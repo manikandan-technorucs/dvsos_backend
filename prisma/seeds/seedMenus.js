@@ -25,27 +25,24 @@ const MENU_SEED_DATA = [
     menus: [
       { name: 'Floor Dashboard', path: '/floor-dashboard', icon: 'LayoutDashboard' },
       { name: 'Assign Mechanic', path: '/assign-mechanic', icon: 'User' },
-      { name: 'Additional Work', path: '/additional-work', icon: 'AlertCircle' },
+      //{ name: 'Additional Work', path: '/additional-work', icon: 'AlertCircle' },
+      { name: 'Job Cards', path: '/job-cards', icon: 'ClipboardList' },
+      { name: 'Notifications', path: '/notifications', icon: 'Bell' }
+    ]
+  },
+
+  {
+    module: 'mechanic',
+    menus: [
+      { name: 'Mechanic Dashboard', path: '/mechanic-dashboard', icon: 'LayoutDashboard' },
       { name: 'Job Cards', path: '/job-cards', icon: 'ClipboardList' },
       { name: 'Notifications', path: '/notifications', icon: 'Bell' }
     ]
   },
   {
-    module: 'body-shop-supervisor',
+    module: 'body-shop-mechanic',
     menus: [
-      { name: 'Body Shop Dashboard', path: '/body-shop-dashboard', icon: 'LayoutDashboard' },
-      // { name: 'Body Shop Queue', path: '/body-shop-queue', icon: 'Paintbrush' },
-      { name: 'Assign Mechanic', path: '/body-shop-assign-mechanic', icon: 'User' },
-      { name: 'Additional Work', path: '/body-shop-additional-work', icon: 'AlertCircle' },
-      { name: 'Job Cards', path: '/job-cards', icon: 'ClipboardList' },
-      { name: 'Notifications', path: '/notifications', icon: 'Bell' }
-    ]
-  },
-  {
-    module: 'water-wash-team',
-    menus: [
-      { name: 'Dashboard', path: '/water-wash-dashboard', icon: 'LayoutDashboard' },
-      { name: 'Assign Member', path: '/water-wash-assign-member', icon: 'User' },
+      { name: 'Body Shop Dashboard', path: '/body-shop-mechanic-dashboard', icon: 'LayoutDashboard' },
       { name: 'Job Cards', path: '/job-cards', icon: 'ClipboardList' },
       { name: 'Notifications', path: '/notifications', icon: 'Bell' }
     ]
@@ -58,6 +55,7 @@ const MENU_SEED_DATA = [
       { name: 'Customers', path: '/customers', icon: 'Users' },
       { name: 'Vehicles', path: '/vehicles', icon: 'Car' },
       { name: 'Job Cards', path: '/job-cards', icon: 'ClipboardList' },
+      { name: 'Assign Mechanic', path: '/assign-mechanic', icon: 'User' },
       { name: 'Notifications', path: '/notifications', icon: 'Bell' },
       { name: 'TV Display', path: '/kiosk/tv', icon: 'Monitor' }
     ]
@@ -72,6 +70,7 @@ const MENU_SEED_DATA = [
       { name: 'Customers', path: '/customers', icon: 'Users' },
       { name: 'Vehicles', path: '/vehicles', icon: 'Car' },
       { name: 'Job Cards', path: '/job-cards', icon: 'ClipboardList' },
+      { name: 'Assign Mechanic', path: '/assign-mechanic', icon: 'User' },
       { name: 'Vehicle Entry', path: '/gate-entry', icon: 'LogIn' },
       { name: 'Notifications', path: '/notifications', icon: 'Bell' },
       // { name: 'System Settings', path: '/system-settings', icon: 'Settings' },
@@ -98,8 +97,7 @@ const MENU_SEED_DATA = [
           { name: 'Bays', path: '/md-bays', icon: 'Tool' }
         ]
       },
-      { name: 'Service Centers', path: '/service-centers', icon: 'Building' },
-      { name: 'Locations', path: '/locations', icon: 'MapPin' },
+      { name: 'Service Center & Location', path: '/locations', icon: 'MapPin' },
       { name: 'Role Management', path: '/roles', icon: 'ShieldCheck' },
       { name: 'User Management', path: '/users', icon: 'Users' },
       { name: 'Audit Logs', path: '/audit-logs', icon: 'FileText' }
@@ -109,16 +107,29 @@ const MENU_SEED_DATA = [
 // can remove later
 const REMOVED_MENU_PATHS = [
   { module: 'floor-supervisor', path: '/work-status' },
-  { module: 'body-shop-supervisor', path: '/body-shop-work-status' },
-  { module: 'body-shop-supervisor', path: '/body-shop-queue' },
   { module: 'admin', path: '/master-bays' },
   { module: 'managing-director', path: '/master-bays' },
   { module: 'managing-director', path: '/audit-logs' },
-  { module: 'water-wash-team', path: '/vehicles' },
-  { module: 'admin', path: '/master-categories' }
+
+  { module: 'admin', path: '/master-categories' },
+  { module: 'admin', path: '/service-centers' },
+  { module: 'floor-supervisor', path: '/additional-work' },
+  { module: 'body-shop-supervisor', path: '/body-shop-additional-work' }
 ];
 
 const seedMenus = async (prisma) => {
+  // Update name for /locations menu to Service Center & Location
+  await prisma.menu.updateMany({
+    where: { path: '/locations' },
+    data: { name: 'Service Center & Location' }
+  });
+
+  // Deactivate all legacy body-shop-supervisor menus
+  await prisma.menu.updateMany({
+    where: { module: 'body-shop-supervisor' },
+    data: { isActive: false }
+  });
+
   for (const removedMenu of REMOVED_MENU_PATHS) {
     await prisma.menu.updateMany({
       where: removedMenu,
@@ -127,6 +138,10 @@ const seedMenus = async (prisma) => {
   }
 
   for (const moduleMenu of MENU_SEED_DATA) {
+    const role = await prisma.role.findUnique({
+      where: { slug: moduleMenu.module }
+    });
+
     for (const [index, menu] of moduleMenu.menus.entries()) {
       const parent = await prisma.menu.upsert({
         where: {
@@ -153,8 +168,32 @@ const seedMenus = async (prisma) => {
         }
       });
 
+      if (role) {
+        await prisma.roleMenuPermission.upsert({
+          where: {
+            roleId_menuId: {
+              roleId: role.id,
+              menuId: parent.id
+            }
+          },
+          update: {
+            canRead: true,
+            canCreate: true,
+            canUpdate: true
+          },
+          create: {
+            roleId: role.id,
+            menuId: parent.id,
+            canRead: true,
+            canCreate: true,
+            canUpdate: true,
+            canDelete: false
+          }
+        });
+      }
+
       for (const [childIndex, child] of (menu.children || []).entries()) {
-        await prisma.menu.upsert({
+        const childMenu = await prisma.menu.upsert({
           where: {
             module_path: {
               module: moduleMenu.module,
@@ -178,6 +217,30 @@ const seedMenus = async (prisma) => {
             isActive: true
           }
         });
+
+        if (role) {
+          await prisma.roleMenuPermission.upsert({
+            where: {
+              roleId_menuId: {
+                roleId: role.id,
+                menuId: childMenu.id
+              }
+            },
+            update: {
+              canRead: true,
+              canCreate: true,
+              canUpdate: true
+            },
+            create: {
+              roleId: role.id,
+              menuId: childMenu.id,
+              canRead: true,
+              canCreate: true,
+              canUpdate: true,
+              canDelete: false
+            }
+          });
+        }
       }
     }
   }

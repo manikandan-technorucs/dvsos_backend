@@ -1,37 +1,54 @@
 const prisma = require('../../config/db');
+const { getSocket } = require('../../config/socket');
 
 async function upsertDeviceToken(userId, { token, platform = null, deviceId = null }) {
   const normalizedDeviceId = String(deviceId || '').trim();
+  const normalizedPlatform = String(platform || '').trim().toLowerCase();
 
+  // Deactivate existing active tokens for this user on the same platform and/or device
+  // so a single user does not accumulate multiple active tokens for the same physical device/platform
+  const deactivationOr = [];
   if (normalizedDeviceId) {
-    await prisma.userDeviceToken.updateMany({
-      where: {
-        deviceId: normalizedDeviceId,
-        token: {
-          not: token
-        },
-        isActive: true
-      },
-      data: {
-        isActive: false,
-        lastUsedAt: new Date()
+    deactivationOr.push({ deviceId: normalizedDeviceId });
+  }
+  if (normalizedPlatform) {
+    deactivationOr.push({
+      userId: Number(userId),
+      platform: {
+        in: [normalizedPlatform, normalizedPlatform.toUpperCase()]
       }
     });
+  } else {
+    deactivationOr.push({ userId: Number(userId) });
   }
+
+  await prisma.userDeviceToken.updateMany({
+    where: {
+      OR: deactivationOr,
+      token: {
+        not: token
+      },
+      isActive: true
+    },
+    data: {
+      isActive: false,
+      lastUsedAt: new Date()
+    }
+  });
 
   return prisma.userDeviceToken.upsert({
     where: { token },
     update: {
-      userId,
-      platform,
+      userId: Number(userId),
+      platform: normalizedPlatform || platform,
       deviceId: normalizedDeviceId || null,
       isActive: true,
       lastUsedAt: new Date()
     },
     create: {
-      userId,
+      userId: Number(userId),
       token,
-      platform,
+      platform: normalizedPlatform || platform,
       deviceId: normalizedDeviceId || null,
       isActive: true,
       lastUsedAt: new Date()
@@ -52,6 +69,17 @@ async function getUserNotifications(userId, limit = 20, offset = 0, unreadOnly =
     prisma.notification.findMany({
       where,
       include: {
+        processStageTracking: {
+          select: {
+            id: true,
+            status: {
+              select: {
+                statusCode: true,
+                statusName: true
+              }
+            }
+          }
+        },
         jobCard: {
           select: {
             slug: true,
@@ -97,7 +125,12 @@ async function getUserNotifications(userId, limit = 20, offset = 0, unreadOnly =
     })
   ]);
 
-  return { notifications, total };
+  const formattedNotifications = notifications.map((n) => ({
+    ...n,
+    isRead: Boolean(n.readAt)
+  }));
+
+  return { notifications: formattedNotifications, total };
 }
 
 async function countUnread(userId) {
@@ -123,17 +156,36 @@ async function markAsRead(userId, notificationId) {
     throw error;
   }
 
-  return prisma.notification.update({
+  const updated = await prisma.notification.update({
     where: { id: notificationId },
     data: { readAt: new Date() }
   });
+
+  try {
+    const unreadCount = await countUnread(userId);
+    const io = getSocket();
+    if (io) {
+      io.to(`user:${userId}`).emit('notification-read', {
+        notificationId: updated.id,
+        jobCardId: updated.jobCardId,
+        gateEntryId: updated.gateEntryId,
+        processStageTrackingId: updated.processStageTrackingId,
+        readAt: updated.readAt,
+        unreadCount
+      });
+    }
+  } catch (socketErr) {
+    console.warn('Failed to emit notification-read socket event:', socketErr?.message);
+  }
+
+  return updated;
 }
 
 /**
  * Mark all notifications as read for a user.
  */
 async function markAllAsRead(userId) {
-  return prisma.notification.updateMany({
+  const result = await prisma.notification.updateMany({
     where: {
       userId,
       readAt: null
@@ -142,6 +194,20 @@ async function markAllAsRead(userId) {
       readAt: new Date()
     }
   });
+
+  try {
+    const io = getSocket();
+    if (io) {
+      io.to(`user:${userId}`).emit('notification-read-all', {
+        readAt: new Date(),
+        unreadCount: 0
+      });
+    }
+  } catch (socketErr) {
+    console.warn('Failed to emit notification-read-all socket event:', socketErr?.message);
+  }
+
+  return result;
 }
 
 /**

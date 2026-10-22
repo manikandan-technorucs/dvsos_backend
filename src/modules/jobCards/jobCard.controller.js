@@ -1,6 +1,5 @@
 const jobCardService = require('./jobCard.service');
 const { apiResponse } = require('../../common/utils/apiResponse');
-
 const { exportToExcel } = require('../../common/utils/excel.util');
 
 const getJobCards = async (req, res, next) => {
@@ -13,6 +12,7 @@ const getJobCards = async (req, res, next) => {
         { header: 'Vehicle Number', key: 'vehicleNumber', width: 20 },
         { header: 'Owner Name', key: 'ownerName', width: 25 },
         { header: 'Owner Mobile', key: 'ownerMobile', width: 18 },
+        { header: 'Work Type', key: 'workType', width: 18 },
         { header: 'Technician', key: 'technician', width: 25 },
         { header: 'Bay', key: 'bayName', width: 18 },
         { header: 'Estimate Cost', key: 'totalEstimate', width: 18 },
@@ -27,6 +27,7 @@ const getJobCards = async (req, res, next) => {
           vehicleNumber: item.vehicle?.registrationNo || '',
           ownerName: item.customer?.fullName || '',
           ownerMobile: item.customer?.mobileNo || '',
+          workType: item.workType || '',
           technician: item.technician || (item.assignedMechanics?.length > 0 ? item.assignedMechanics.map(m => m.fullName).join(', ') : 'Unassigned'),
           bayName: item.bay?.bayName || item.bay?.bayCode || item.assignedBay?.bayName || item.assignedBay?.bayCode || 'Unassigned',
           totalEstimate: item.totalEstimate || 0,
@@ -46,6 +47,13 @@ const getJobCards = async (req, res, next) => {
       meta: result.meta
     });
   } catch (error) {
+    console.error('[getJobCards ERROR]', {
+      message: error.message,
+      code: error.code,
+      meta: error.meta,
+      stack: error.stack,
+      query: req.query
+    });
     return next(error);
   }
 };
@@ -130,7 +138,7 @@ const postponeService = async (req, res, next) => {
   try {
     const { id, serviceId } = req.params;
     const { reason } = req.body;
-    
+
     if (!reason) {
       return apiResponse(res, { statusCode: 400, success: false, message: 'Reason is required for postponing' });
     }

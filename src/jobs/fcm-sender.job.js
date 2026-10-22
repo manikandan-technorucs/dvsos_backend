@@ -11,8 +11,11 @@ const isInvalidTokenError = (err) => {
 
   return err.code === 'messaging/registration-token-not-registered'
     || err.code === 'messaging/invalid-registration-token'
+    || err.code === 'messaging/mismatched-credential'
     || message.includes('registration-token-not-registered')
     || message.includes('invalid-registration-token')
+    || message.includes('SenderId mismatch')
+    || message.includes('mismatched-credential')
     || message.includes('not a valid FCM registration token')
     || message.includes('invalid-argument');
 };
@@ -28,9 +31,8 @@ const markNotificationFailure = async (notificationId, reason, retryCount) => {
   });
 };
 
-/**
- * Main workflow to send pending notifications via FCM.
- */
+//* Main workflow to send pending notifications via FCM.
+
 async function runFcmSenderWorkflow() {
   console.info('[CRON START] FCM Push Notification Sender Job');
   const startTime = Date.now();
@@ -60,7 +62,13 @@ async function runFcmSenderWorkflow() {
           include: {
             deviceTokens: {
               where: {
-                isActive: true
+                isActive: true,
+                platform: {
+                  in: ['android', 'ios', 'ANDROID', 'IOS']
+                }
+              },
+              orderBy: {
+                updatedAt: 'desc'
               }
             }
           }
@@ -71,10 +79,33 @@ async function runFcmSenderWorkflow() {
 
     for (const notification of notifications) {
       processedCount++;
-      const tokens = notification.user?.deviceTokens || [];
+      const allTokens = notification.user?.deviceTokens || [];
+      const seenTokens = new Set();
+      const seenPlatforms = new Set();
+      const tokens = [];
+
+      for (const t of allTokens) {
+        if (!t.token || seenTokens.has(t.token)) continue;
+        seenTokens.add(t.token);
+
+        const platKey = (t.platform || 'android').toLowerCase();
+        // If we already have a more recent active token for this user on this platform,
+        // deactivate this stale token and skip sending to avoid duplicate notifications on the same device!
+        if (seenPlatforms.has(platKey)) {
+          console.info(`[FCM Sender Job] Deactivating duplicate stale token ID ${t.id} for user ${notification.userId}`);
+          prisma.userDeviceToken.update({
+            where: { id: t.id },
+            data: { isActive: false }
+          }).catch(err => console.warn(`[FCM Sender Job] Error deactivating stale token:`, err.message));
+          continue;
+        }
+
+        seenPlatforms.add(platKey);
+        tokens.push(t);
+      }
 
       if (tokens.length === 0) {
-        console.warn(`[FCM Sender Job] Notification ${notification.id} skipped: User ${notification.userId} has no active device tokens.`);
+        console.warn(`[FCM Sender Job] Notification ${notification.id} skipped: User ${notification.userId} has no active mobile device tokens.`);
         await markNotificationFailure(
           notification.id,
           'NO_ACTIVE_DEVICE_TOKEN',
@@ -88,6 +119,7 @@ async function runFcmSenderWorkflow() {
       let temporaryFailureCount = 0;
       let invalidTokenCount = 0;
       let lastFailureReason = null;
+      const collapseTag = `dvsos_${notification.jobCardId || notification.gateEntryId || notification.id}`;
 
       for (const tokenEntity of tokens) {
         try {
@@ -96,6 +128,27 @@ async function runFcmSenderWorkflow() {
             notification: {
               title: notification.title,
               body: notification.message || ''
+            },
+            android: {
+              priority: 'high',
+              collapseKey: collapseTag,
+              notification: {
+                icon: 'ic_stat_notification',
+                channelId: 'default',
+                sound: 'default',
+                defaultSound: true,
+                defaultVibrateTimings: true,
+                priority: 'high',
+                tag: collapseTag
+              }
+            },
+            apns: {
+              payload: {
+                aps: {
+                  sound: 'default',
+                  badge: 1
+                }
+              }
             },
             data: {
               notificationId: String(notification.id),
@@ -181,9 +234,7 @@ async function runFcmSenderWorkflow() {
   }
 }
 
-/**
- * Initialize and register the cron job safely.
- */
+// Initialize and register the cron job safely.
 function startFcmSenderJob() {
   if (isRegistered) {
     console.info('[FCM Sender Job] Cron job already registered. Skipping registration.');

@@ -11,18 +11,16 @@ const normalizeAllowedRoles = (allowedRoles) => {
 
 const ROLE_ALIASES = {
   super_admin: 'admin',
-  body_shop: 'body_shop_supervisor',
-  bodyshop: 'body_shop_supervisor',
-  bodyshop_supervisor: 'body_shop_supervisor',
+  body_shop: 'floor_supervisor',
+  bodyshop: 'floor_supervisor',
+  bodyshop_supervisor: 'floor_supervisor',
+  body_shop_supervisor: 'floor_supervisor',
   crm: 'crm_team',
   crm_user: 'crm_team',
   crm_executive: 'crm_team',
   crm_staff: 'crm_team',
   floor: 'floor_supervisor',
-  mechanical_supervisor: 'floor_supervisor',
-  water_wash: 'water_wash_team',
-  water_wash_supervisor: 'water_wash_team',
-  wash: 'water_wash_team'
+  mechanical_supervisor: 'floor_supervisor'
 };
 
 const ROLE_MODULES = {
@@ -33,8 +31,7 @@ const ROLE_MODULES = {
   floor_supervisor: 'floor-supervisor',
   mechanical: 'floor-supervisor',
   mechanic: 'floor-supervisor',
-  body_shop_supervisor: 'body-shop-supervisor',
-  water_wash_team: 'water-wash-team',
+  body_shop_supervisor: 'floor-supervisor',
   manager: 'manager',
   managing_director: 'managing-director',
   md: 'managing-director'

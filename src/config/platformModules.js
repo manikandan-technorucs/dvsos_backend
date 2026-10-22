@@ -4,17 +4,24 @@ module.exports = {
     'manager',
     'managing-director',
     'floor-supervisor',
-    'body-shop-supervisor',
-    'water-wash-team',
+    'body-shop-supervisor'
   ],
   mobile: [
     'gate-security',
-    'crm-team'
+    'crm-team',
+    'manager',
+    'floor-supervisor'
   ],
   'mobile-gate': [
     'gate-security'
   ],
   'mobile-crm': [
     'crm-team'
+  ],
+  'mobile-manager': [
+    'manager'
+  ],
+  'mobile-supervisor': [
+    'floor-supervisor'
   ]
 };

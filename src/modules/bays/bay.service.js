@@ -105,11 +105,51 @@ const createBay = async (payload, actorUserId) => {
     throw createHttpError(409, 'Bay with this name already exists in the selected location');
   }
 
-  let bayCode = payload.bayCode;
+  let bayCode = payload.bayCode ? String(payload.bayCode).trim() : null;
   if (!bayCode) {
-    // Generate a simple unique bay code
+    /* Original code:
     const count = await prisma.bay.count();
     bayCode = `BAY-${String(count + 1).padStart(3, '0')}`;
+    */
+    // Generate a unique bay code based on total bays and existing codes in the table
+    const allBays = await prisma.bay.findMany({
+      select: { bayCode: true, locationId: true }
+    });
+
+    const existingInLocation = new Set(
+      allBays
+        .filter((b) => b.locationId === locationId)
+        .map((b) => String(b.bayCode || '').trim().toUpperCase())
+    );
+
+    let maxNum = allBays.length;
+    allBays.forEach((b) => {
+      const match = String(b.bayCode || '').match(/^BAY-(\d+)$/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxNum) {
+          maxNum = num;
+        }
+      }
+    });
+
+    let nextNum = maxNum + 1;
+    let candidateCode = `BAY-${String(nextNum).padStart(3, '0')}`;
+    while (existingInLocation.has(candidateCode.toUpperCase())) {
+      nextNum++;
+      candidateCode = `BAY-${String(nextNum).padStart(3, '0')}`;
+    }
+    bayCode = candidateCode;
+  } else {
+    const codeExists = await prisma.bay.findFirst({
+      where: {
+        locationId,
+        bayCode
+      }
+    });
+    if (codeExists) {
+      throw createHttpError(409, 'Bay with this code already exists in the selected location');
+    }
   }
 
   const statusId = await getActiveStatusId();
@@ -254,6 +294,7 @@ const listBays = async (query, user) => {
 const getBayDropdown = async (query = {}) => {
   const locationId = parsePositiveInt(query.locationId, undefined);
   const bayType = toTrimmedString(query.bayType || query.type);
+  const search = toTrimmedString(query.search);
   const where = { isActive: true };
 
   if (locationId) {
@@ -262,6 +303,13 @@ const getBayDropdown = async (query = {}) => {
 
   if (bayType) {
     where.bayType = bayType;
+  }
+
+  if (search) {
+    where.OR = [
+      { bayName: { contains: search } },
+      { bayCode: { contains: search } }
+    ];
   }
 
   const bays = await prisma.bay.findMany({

@@ -3,9 +3,7 @@ const ROLE_REDIRECT_PATHS = {
   gate_security: '/gate/gate-entry',
   crm_team: '/crm/job-card-create',
   floor_supervisor: '/floor/work-assignment',
-  body_shop_supervisor: '/body-shop/queue',
-  water_wash_supervisor: '/water-wash-dashboard',
-  water_wash_team: '/water-wash/queue',
+  body_shop_supervisor: '/floor/work-assignment',
   manager: '/manager/dashboard',
   managing_director: '/md/dashboard'
 };

@@ -81,7 +81,7 @@ model Location {
   modifiedById          Int?                   @map("modified_by")
   createdAt             DateTime               @default(dbgenerated("sysutcdatetime()")) @map("created_at")
   updatedAt             DateTime               @updatedAt @map("updated_at")
-  kiosk_key             String?                @db.NVarChar(100)
+  kioskKey              String?                @map("kiosk_key") @db.NVarChar(100)
   auditLogs             AuditLog[]
   bays                  Bay[]
   customers             Customer[]
@@ -329,6 +329,8 @@ model ProcessStageTracking {
   completedAt     DateTime?      @map("completed_at")
   isDelayNotified Boolean        @default(false) @map("is_delay_notified")
   delayNotifiedAt DateTime?      @map("delay_notified_at")
+  lastNotifiedAt  DateTime?      @map("last_notified_at")
+  notificationCount Int          @default(0) @map("notification_count")
   createdById     Int?           @map("created_by")
   modifiedById    Int?           @map("modified_by")
   createdAt       DateTime       @default(dbgenerated("sysutcdatetime()")) @map("created_at")
@@ -357,13 +359,14 @@ model ProcessStageTracking {
 }
 
 model StageTimeLimit {
-  id             Int                       @id @default(autoincrement())
-  locationId     Int?                      @map("location_id")
-  moduleId       Int                       @map("module_id")
-  statusId       Int                       @map("status_id")
-  stageCode      String                    @map("stage_code") @db.NVarChar(50)
-  allowedMinutes Int                       @map("allowed_minutes")
-  isActive       Boolean                   @default(true) @map("is_active")
+  id                    Int                       @id @default(autoincrement())
+  locationId            Int?                      @map("location_id")
+  moduleId              Int                       @map("module_id")
+  statusId              Int                       @map("status_id")
+  stageCode             String                    @map("stage_code") @db.NVarChar(50)
+  allowedMinutes        Int                       @map("allowed_minutes")
+  repeatIntervalMinutes Int?                      @map("repeat_interval_minutes")
+  isActive              Boolean                   @default(true) @map("is_active")
   createdById    Int?                      @map("created_by")
   modifiedById   Int?                      @map("modified_by")
   createdAt      DateTime                  @default(dbgenerated("sysutcdatetime()")) @map("created_at")
@@ -655,6 +658,7 @@ model JobCardApproval {
   modifiedById        Int?             @map("modified_by")
   createdAt           DateTime         @default(dbgenerated("sysutcdatetime()")) @map("created_at")
   updatedAt           DateTime         @updatedAt @map("updated_at")
+  voice_note_url      String?          @db.NVarChar(Max)
   createdBy           User?            @relation("JobCardApprovalCreatedBy", fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
   jobCard             JobCard          @relation(fields: [jobCardId], references: [id], onUpdate: NoAction)
   modifiedBy          User?            @relation("JobCardApprovalModifiedBy", fields: [modifiedById], references: [id], onDelete: NoAction, onUpdate: NoAction)

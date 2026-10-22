@@ -1,13 +1,12 @@
 const { STATUS_MODULE_CODES, resolveStatusFromCodes } = require('../../common/utils/status.util');
+const {
+  DEPARTMENT_ORDER,
+  DEPARTMENT_ALIASES,
+  normalizeText,
+  normalizeDepartment,
+  getServiceDepartment
+} = require('../../common/utils/department.util');
 const { startStage, completeStage, cancelStage, skipStage } = require('./processStageTracking.service');
-
-const DEPARTMENT_ORDER = ['mechanical', 'body-shop', 'water-wash'];
-
-const DEPARTMENT_ALIASES = {
-  mechanical: ['mechanical', 'mechanic', 'mechnanic', 'floor'],
-  'body-shop': ['body-shop', 'body_shop', 'body shop', 'bodyshop', 'paint', 'denting'],
-  'water-wash': ['water-wash', 'water_wash', 'water wash', 'wash']
-};
 
 const ASSIGNMENT_PENDING_STATUS_CODES = {
   mechanical: 'MECHANICAL_ASSIGNMENT_PENDING',
@@ -17,25 +16,17 @@ const ASSIGNMENT_PENDING_STATUS_CODES = {
 const FINAL_JOB_CARD_STATUS_CODES = ['DELIVERED', 'REJECTED'];
 const REJECTED_APPROVAL_STATUS_CODES = ['REJECTED'];
 
-const normalizeText = (value) => String(value || '').trim().toLowerCase().replace(/[_\s]+/g, '-');
-
-const normalizeDepartment = (value) => {
-  const normalizedValue = normalizeText(value);
-
-  return DEPARTMENT_ORDER.find((department) => {
-    return DEPARTMENT_ALIASES[department].some((alias) => normalizeText(alias) === normalizedValue);
-  });
-};
-
-const getServiceDepartment = (service) => {
-  const category = service && service.serviceItem && service.serviceItem.category;
-  return normalizeDepartment(category && (category.slug || category.name));
-};
-
 const getStatusCode = (status) => String((status && status.statusCode) || '').trim().toUpperCase();
 
 const isRejectedAdditionalService = (service) => {
   return Boolean(service && service.isAdditional && getStatusCode(service.approvalStatus) === 'REJECTED');
+};
+
+const isPendingAdditionalService = (service) => {
+  if (!service || !service.isAdditional) return false;
+  const code = getStatusCode(service.approvalStatus);
+  // Blank / unknown approval status on additional work is treated as PENDING
+  return !code || code === 'PENDING';
 };
 
 const isApprovedForWork = (service) => {
@@ -96,20 +87,17 @@ const areDepartmentServicesAssigned = (jobCard, department) => {
 };
 
 const areDepartmentServicesCompleted = (jobCard, department) => {
+  // If there are pending additional services for this department, it is NOT complete.
+  const hasPendingForDept = getDepartmentServices(jobCard, department).some(isPendingAdditionalService);
+  if (hasPendingForDept) {
+    return false;
+  }
+
   const services = getDepartmentServices(jobCard, department).filter((service) => {
     return isApprovedForWork(service) && !isRejectedAdditionalService(service);
   });
 
   return services.length === 0 || services.every(isJobCardServiceCompleted);
-};
-
-const isDepartmentSkipped = (jobCard, department) => {
-  if (!jobCard || !jobCard.processStageTrackings) {
-    return false;
-  }
-  const expectedStatusCode = ASSIGNMENT_PENDING_STATUS_CODES[department];
-  const tracking = jobCard.processStageTrackings.find((t) => getStatusCode(t.status) === expectedStatusCode);
-  return tracking && String(tracking.stageStatus).trim().toUpperCase() === 'SKIPPED';
 };
 
 const isDepartmentPostponed = (jobCard, department) => {
@@ -138,26 +126,65 @@ const canStartAssignmentPendingForDepartment = (jobCard, department) => {
     return false;
   }
 
-  if (areDepartmentServicesAssigned(jobCard, department) || areDepartmentServicesCompleted(jobCard, department)) {
+  if (
+    areDepartmentServicesAssigned(jobCard, department) ||
+    areDepartmentServicesCompleted(jobCard, department) ||
+    (department === 'water-wash' && getDepartmentServices(jobCard, 'water-wash').some((s) => {
+      const code = getStatusCode(s.serviceStatus);
+      return code === 'IN_PROGRESS' || code.includes('IN_PROGRESS');
+    }))
+  ) {
     return false;
   }
 
-  const departmentIndex = DEPARTMENT_ORDER.indexOf(department);
-  const previousDepartments = DEPARTMENT_ORDER.slice(0, departmentIndex);
-
+  // 1. Water wash is strictly the final department.
+  //    It can ONLY start if all repair departments (mechanical and body-shop) are completely finished.
+  //    A postponed repair department is NOT completed!
   if (department === 'water-wash') {
-    return previousDepartments.every((previousDepartment) => {
-      return !hasDepartmentServicesAvailableForWork(jobCard, previousDepartment)
-        || areDepartmentServicesCompleted(jobCard, previousDepartment);
+    const repairDepartments = ['mechanical', 'body-shop'];
+    return repairDepartments.every((repairDept) => {
+      if (!hasDepartmentServicesAvailableForWork(jobCard, repairDept)) return true;
+      return areDepartmentServicesCompleted(jobCard, repairDept);
     });
   }
 
-  return previousDepartments.every((previousDepartment) => {
-    return !hasDepartmentServicesAvailableForWork(jobCard, previousDepartment)
-      || areDepartmentServicesCompleted(jobCard, previousDepartment)
-      || isDepartmentPostponed(jobCard, previousDepartment)
-      || isDepartmentSkipped(jobCard, previousDepartment);
+  // 2. For repair departments (mechanical and body-shop):
+  const otherRepairDept = department === 'mechanical' ? 'body-shop' : 'mechanical';
+
+  // If the other repair department has no work or is completely finished:
+  if (!hasDepartmentServicesAvailableForWork(jobCard, otherRepairDept) || areDepartmentServicesCompleted(jobCard, otherRepairDept)) {
+    return true;
+  }
+
+  // Both repair departments have uncompleted work.
+  // If the other repair department is currently assigned or has active work in progress:
+  if (areDepartmentServicesAssigned(jobCard, otherRepairDept)) {
+    return false;
+  }
+  const otherInProgress = getDepartmentServices(jobCard, otherRepairDept).some((s) => {
+    const code = getStatusCode(s.serviceStatus);
+    return code === 'IN_PROGRESS' || code.includes('IN_PROGRESS');
   });
+  if (otherInProgress) {
+    return false;
+  }
+
+  // If this department is postponed and the other repair department is NOT postponed:
+  // this department was skipped in favor of the other. Let the other be assigned!
+  if (isDepartmentPostponed(jobCard, department) && !isDepartmentPostponed(jobCard, otherRepairDept)) {
+    return false;
+  }
+
+  // If the other repair department is postponed and this department is NOT postponed:
+  // the other was skipped in favor of this department. This department can start!
+  if (!isDepartmentPostponed(jobCard, department) && isDepartmentPostponed(jobCard, otherRepairDept)) {
+    return true;
+  }
+
+  // If neither (or both) are postponed, follow default department order (mechanical before body-shop):
+  const departmentIndex = DEPARTMENT_ORDER.indexOf(department);
+  const otherIndex = DEPARTMENT_ORDER.indexOf(otherRepairDept);
+  return departmentIndex < otherIndex;
 };
 
 const getNextAssignmentPendingDepartment = (jobCard) => {
@@ -198,13 +225,62 @@ const startDepartmentAssignmentPendingStage = async (tx, { jobCard, department, 
     return null;
   }
 
-  const alreadyTracked = await hasAnyTrackingForStatus(tx, {
-    jobCardId: jobCard.id,
-    statusId: status.id
+  // Auto-resume any postponed approved services in this department since its turn has arrived
+  const postponedServices = getDepartmentServices(jobCard, department).filter((service) => {
+    return getStatusCode(service.serviceStatus) === 'POSTPONED' && isApprovedForWork(service) && !isRejectedAdditionalService(service);
   });
 
-  if (alreadyTracked) {
-    return null;
+  if (postponedServices.length > 0) {
+    const pendingStatus = await resolveStatusFromCodes(tx, STATUS_MODULE_CODES.JOB_CARD_SERVICE, ['PENDING']);
+    if (pendingStatus) {
+      for (const service of postponedServices) {
+        await tx.jobCardService.update({
+          where: { id: service.id },
+          data: {
+            serviceStatusId: pendingStatus.id,
+            modifiedById: createdById
+          }
+        });
+
+        let resumeAction = null;
+        try {
+          resumeAction = await resolveStatusFromCodes(tx, 'service-history-actions', ['RESUME']);
+        } catch (err) { /* ignore */ }
+
+        await tx.jobCardServiceHistory.create({
+          data: {
+            jobCardServiceId: service.id,
+            actionTypeId: resumeAction ? resumeAction.id : pendingStatus.id,
+            fromStatusId: service.serviceStatusId,
+            toStatusId: pendingStatus.id,
+            reason: `Auto-resumed as ${department} assignment started`,
+            changedById: createdById || 1
+          }
+        });
+
+        service.serviceStatusId = pendingStatus.id;
+        service.serviceStatus = pendingStatus;
+      }
+    }
+  }
+
+  if (!jobCard.currentStatusId || jobCard.currentStatusId !== status.id) {
+    if (jobCard.id) {
+      await completeStage({
+        jobCardId: jobCard.id,
+        modifiedById: createdById
+      }, tx);
+    }
+
+    await tx.jobCard.update({
+      where: { id: jobCard.id },
+      data: {
+        currentStatusId: status.id,
+        modifiedById: createdById
+      }
+    });
+    jobCard.currentStatusId = status.id;
+    jobCard.currentStatus = status;
   }
 
   return startStage({
@@ -282,8 +358,10 @@ const cancelDepartmentAssignmentPendingStage = async (tx, { jobCard, department,
 };
 
 const syncAssignmentPendingStages = async (tx, { jobCard, actorUserId = null }) => {
+  const nextDepartment = getNextAssignmentPendingDepartment(jobCard);
+
   for (const department of DEPARTMENT_ORDER) {
-    if (!hasDepartmentServicesAvailableForWork(jobCard, department)) {
+    if (department !== nextDepartment) {
       await cancelDepartmentAssignmentPendingStage(tx, {
         jobCard,
         department,
@@ -292,8 +370,13 @@ const syncAssignmentPendingStages = async (tx, { jobCard, actorUserId = null }) 
     }
   }
 
-  return startNextAssignmentPendingStage(tx, {
+  if (!nextDepartment) {
+    return null;
+  }
+
+  return startDepartmentAssignmentPendingStage(tx, {
     jobCard,
+    department: nextDepartment,
     createdById: actorUserId
   });
 };

@@ -52,7 +52,7 @@ const seedAdminRoleMenuPermissions = async (prisma) => {
           canRead: true,
           canCreate: !readOnlyMenu,
           canUpdate: !readOnlyMenu,
-          canDelete: !readOnlyMenu
+          canDelete: false
         };
       })
     });

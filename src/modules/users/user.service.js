@@ -20,8 +20,6 @@ const MD_ALLOWED_ROLE_SLUGS = new Set([
   'crm_team',
   'floor_supervisor',
   'body_shop_supervisor',
-  'water_wash_supervisor',
-  'water_wash_team',
   'manager'
 ]);
 const LOCATION_REQUIRED_ROLE_SLUGS = new Set([
@@ -31,14 +29,11 @@ const LOCATION_REQUIRED_ROLE_SLUGS = new Set([
   'crm_team',
   'floor_supervisor',
   'body_shop_supervisor',
-  'water_wash_supervisor',
-  'water_wash_team',
   'manager'
 ]);
 const ASSIGNABLE_MODULE_BY_CATEGORY = {
-  mechanical: 'floor-supervisor',
-  'body-shop': 'body-shop-supervisor',
-  'water-wash': 'water-wash-team'
+  mechanical: ['mechanical', 'mechanic'],
+  'body-shop': ['body-shop-mechanic', 'body-shop', 'bodyshop']
 };
 
 const createHttpError = (statusCode, message) => {
@@ -82,20 +77,12 @@ const normalizeAssignmentCategory = (category) => {
     return 'body-shop';
   }
 
-  if (['water-wash', 'waterwash', 'wash'].includes(normalized)) {
-    return 'water-wash';
-  }
-
   return 'mechanical';
 };
 
 const getServiceCategoryAliases = (category) => {
   if (category === 'body-shop') {
     return ['body-shop', 'bodyshop', 'body_shop', 'paint', 'denting'];
-  }
-
-  if (category === 'water-wash') {
-    return ['water-wash', 'waterwash', 'water_wash', 'wash'];
   }
 
   return ['mechanical', 'mechanic', 'mechnanic', 'floor'];
@@ -587,19 +574,37 @@ const listMechanicDropdown = async (query, actor) => {
   const locationId = actor && actor.locationId ? Number(actor.locationId) : requestedLocationId;
   const category = normalizeAssignmentCategory(query.category);
   const targetModule = ASSIGNABLE_MODULE_BY_CATEGORY[category] || ASSIGNABLE_MODULE_BY_CATEGORY.mechanical;
+  const search = query.search ? String(query.search).trim() : undefined;
 
   const users = await prisma.user.findMany({
     where: {
       isActive: true,
       ...(locationId ? { locationId } : {}),
+      ...(search ? {
+        OR: [
+          { fullName: { contains: search } },
+          { employeeCode: { contains: search } },
+          { mobileNo: { contains: search } }
+        ]
+      } : {}),
       role: {
         isActive: true,
+        NOT: {
+          OR: [
+            { slug: { contains: 'supervisor' } },
+            { slug: { contains: 'manager' } },
+            { slug: { contains: 'admin' } },
+            { slug: { contains: 'director' } }
+          ]
+        },
         rolePermissions: {
           some: {
             canRead: true,
             menu: {
               isActive: true,
-              module: targetModule
+              ...(Array.isArray(targetModule)
+                ? { module: { in: targetModule } }
+                : { module: targetModule })
             }
           }
         }

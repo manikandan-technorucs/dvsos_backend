@@ -1,4 +1,5 @@
 const prisma = require('../../config/db');
+const { getSocket } = require('../../config/socket');
 
 const ACTIVE_STAGE_STATUSES = ['PENDING', 'DELAYED'];
 
@@ -40,10 +41,37 @@ const startStage = async ({
   statusId,
   createdById = null
 }, db = prisma) => {
+  console.info(`[startStage] Called: jobCardId=${jobCardId}, statusId=${statusId}, moduleId=${moduleId}, locationId=${locationId}`);
+
   const limit = await findStageTimeLimit(db, { locationId, moduleId, statusId });
 
   if (!limit) {
+    console.warn(`[startStage] No stageTimeLimit found for statusId=${statusId}, moduleId=${moduleId}, locationId=${locationId}. No notification will be sent.`);
     return null;
+  }
+
+  console.info(`[startStage] stageTimeLimit found: id=${limit.id}, allowedMinutes=${limit.allowedMinutes}`);
+
+  if (jobCardId) {
+    const existingStage = await db.processStageTracking.findFirst({
+      where: {
+        jobCardId,
+        statusId,
+        stageStatus: {
+          in: ACTIVE_STAGE_STATUSES
+        }
+      },
+      include: {
+        status: true,
+        jobCard: { select: { jobCardNo: true, slug: true } },
+        gateEntry: { select: { gateEntryNo: true } },
+        vehicle: { select: { registrationNo: true } }
+      }
+    });
+
+    if (existingStage) {
+      return existingStage;
+    }
   }
 
   const newStage = await db.processStageTracking.create({
@@ -64,165 +92,54 @@ const startStage = async ({
     },
     include: {
       status: true,
-      jobCard: { select: { jobCardNo: true } },
+      jobCard: { select: { jobCardNo: true, slug: true } },
       gateEntry: { select: { gateEntryNo: true } },
       vehicle: { select: { registrationNo: true } }
     }
   });
 
-  const fullLimit = await db.stageTimeLimit.findUnique({
-    where: { id: limit.id },
-    include: { recipients: true }
-  });
-
-  if (fullLimit && fullLimit.recipients && fullLimit.recipients.length > 0) {
-    const userIds = new Set();
-    const roleIds = new Set();
-
-    fullLimit.recipients.forEach(r => {
-      if (r.userId) userIds.add(r.userId);
-      if (r.roleId) roleIds.add(r.roleId);
-    });
-
-    if (roleIds.size > 0) {
-      const users = await db.user.findMany({
-        where: {
-          roleId: { in: Array.from(roleIds) },
-          locationId: newStage.locationId,
-          isActive: true
-        },
-        select: { id: true }
-      });
-      users.forEach(u => userIds.add(u.id));
-    }
-
-    const recipientsList = Array.from(userIds);
-    if (recipientsList.length > 0) {
-      const statusName = newStage.status?.statusName || newStage.status?.statusCode || 'Process stage';
-      const vehicleNo = newStage.vehicle?.registrationNo ? ` for ${newStage.vehicle.registrationNo}` : '';
-      const reference = newStage.jobCard?.jobCardNo || newStage.gateEntry?.gateEntryNo || `stage #${newStage.id}`;
-
-      await db.notification.createMany({
-        data: recipientsList.map((userId) => ({
-          userId,
-          title: `${statusName}`,
-          message: `${statusName}${vehicleNo} has been started. Reference: ${reference}.`,
-          type: 'START_ALERT',
-          locationId: newStage.locationId,
-          gateEntryId: newStage.gateEntryId,
-          jobCardId: newStage.jobCardId,
-          processStageTrackingId: newStage.id,
-          sentAt: null,
-          retryCount: 0
-        }))
-      });
-    }
-  }
-
+  // Start Alert notification removed upon request:
+  // Notifications are now ONLY generated when stage schedule time limits expire (DELAY_ALERT).
   return newStage;
 };
 
 const completeStage = async ({
   gateEntryId = null,
   jobCardId = null,
-  moduleId,
-  statusId,
+  moduleId = null,
+  statusId = null,
   modifiedById = null
 }, db = prisma) => {
-  const stage = await db.processStageTracking.findFirst({
-    where: {
-      ...(gateEntryId ? { gateEntryId } : {}),
-      ...(jobCardId ? { OR: [{ jobCardId }, { jobCardId: null }] } : {}),
-      moduleId,
-      statusId,
-      stageStatus: {
-        in: ACTIVE_STAGE_STATUSES
-      }
-    },
-    orderBy: {
-      startedAt: 'desc'
+  const where = {
+    ...(gateEntryId ? { gateEntryId } : {}),
+    ...(jobCardId ? { OR: [{ jobCardId }, { jobCardId: null }] } : {}),
+    ...(moduleId ? { moduleId } : {}),
+    ...(statusId ? { statusId } : {}),
+    stageStatus: {
+      in: ACTIVE_STAGE_STATUSES
     }
-  });
+  };
 
-  if (!stage) {
-    return null;
-  }
-
-  const updatedStage = await db.processStageTracking.update({
-    where: { id: stage.id },
+  const updatedStages = await db.processStageTracking.updateMany({
+    where,
     data: {
       stageStatus: 'COMPLETED',
       completedAt: new Date(),
       ...(jobCardId ? { jobCardId } : {}),
       modifiedById
-    },
-    include: {
-      status: true,
-      jobCard: { select: { jobCardNo: true } },
-      gateEntry: { select: { gateEntryNo: true } },
-      vehicle: { select: { registrationNo: true } }
     }
   });
 
-  // Stage Schedules logic for completion notifications
-  const limit = await findStageTimeLimit(db, {
-    locationId: updatedStage.locationId,
-    moduleId: updatedStage.moduleId,
-    statusId: updatedStage.statusId
-  });
-
-  if (limit) {
-    const fullLimit = await db.stageTimeLimit.findUnique({
-      where: { id: limit.id },
-      include: { recipients: true }
-    });
-
-    if (fullLimit && fullLimit.recipients && fullLimit.recipients.length > 0) {
-      const userIds = new Set();
-      const roleIds = new Set();
-
-      fullLimit.recipients.forEach(r => {
-        if (r.userId) userIds.add(r.userId);
-        if (r.roleId) roleIds.add(r.roleId);
-      });
-
-      if (roleIds.size > 0) {
-        const users = await db.user.findMany({
-          where: {
-            roleId: { in: Array.from(roleIds) },
-            locationId: updatedStage.locationId,
-            isActive: true
-          },
-          select: { id: true }
-        });
-        users.forEach(u => userIds.add(u.id));
-      }
-
-      const recipientsList = Array.from(userIds);
-      if (recipientsList.length > 0) {
-        const statusName = updatedStage.status?.statusName || updatedStage.status?.statusCode || 'Process stage';
-        const vehicleNo = updatedStage.vehicle?.registrationNo ? ` for ${updatedStage.vehicle.registrationNo}` : '';
-        const reference = updatedStage.jobCard?.jobCardNo || updatedStage.gateEntry?.gateEntryNo || `stage #${updatedStage.id}`;
-
-        await db.notification.createMany({
-          data: recipientsList.map((userId) => ({
-            userId,
-            title: `${statusName} Completed`,
-            message: `${statusName}${vehicleNo} has been marked as completed. Reference: ${reference}.`,
-            type: 'COMPLETION_ALERT',
-            locationId: updatedStage.locationId,
-            gateEntryId: updatedStage.gateEntryId,
-            jobCardId: updatedStage.jobCardId,
-            processStageTrackingId: updatedStage.id,
-            sentAt: null,
-            retryCount: 0
-          }))
-        });
-      }
+  try {
+    const io = getSocket();
+    if (io) {
+      io.emit('stage-completed', { gateEntryId, jobCardId, moduleId, statusId });
     }
+  } catch (socketErr) {
+    console.warn('Failed to emit stage-completed socket event:', socketErr?.message);
   }
 
-  return updatedStage;
+  return updatedStages;
 };
 
 const cancelStage = async ({

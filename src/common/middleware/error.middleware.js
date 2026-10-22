@@ -15,7 +15,6 @@ const errorMiddleware = (err, req, res, next) => {
       message = 'A database error occurred. Please check your inputs.';
     }
   }
-
   console.error(err);
 
   return apiResponse(res, {

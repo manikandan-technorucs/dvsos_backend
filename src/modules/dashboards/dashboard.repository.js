@@ -92,7 +92,7 @@ const getAdminDashboard = async ({ recentUserLimit = 5 } = {}) => {
 const getDateRange = (timeframe) => {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  
+
   let startDate = today;
   let endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
 
@@ -105,7 +105,7 @@ const getDateRange = (timeframe) => {
   } else if (timeframe === 'all_time') {
     startDate = new Date(2000, 0, 1); // Way in the past
   }
-  
+
   return { startDate, endDate };
 };
 
@@ -129,7 +129,7 @@ const getMdDashboard = async ({ timeframe = 'today', locationId } = {}) => {
     where: dateFilter
   });
   const totalRevenue = revenueResult._sum.finalAmount || 0;
-  
+
   const userWhere = locationId ? { locationId } : {};
   const totalUsers = await prisma.user.count({ where: userWhere });
 
@@ -169,7 +169,7 @@ const getMdDashboard = async ({ timeframe = 'today', locationId } = {}) => {
       dayData.count++;
     }
   });
-  
+
   const todayDate = new Date().toLocaleDateString('en-CA');
   dailyThroughput.forEach(d => {
     if (d.fullDate === todayDate) {
@@ -181,7 +181,7 @@ const getMdDashboard = async ({ timeframe = 'today', locationId } = {}) => {
   const allStatuses = await prisma.statusMaster.findMany({
     where: { module: { moduleCode: 'job-card' } }
   });
-  
+
   const statusCounts = await prisma.jobCard.groupBy({
     by: ['currentStatusId'],
     _count: true,
@@ -219,7 +219,7 @@ const getMdDashboard = async ({ timeframe = 'today', locationId } = {}) => {
     if (!deptMap[catName]) {
       deptMap[catName] = { department: catName, active: 0, queue: 0, done: 0, totalTime: 0, doneCount: 0 };
     }
-    
+
     const statusCode = wa.status?.statusCode || '';
     if (statusCode.includes('ASSIGNED')) {
       deptMap[catName].queue++;
@@ -227,7 +227,7 @@ const getMdDashboard = async ({ timeframe = 'today', locationId } = {}) => {
       deptMap[catName].active++;
     } else if (statusCode.includes('COMPLETED')) {
       deptMap[catName].done++;
-      
+
       if (wa.startedAt && wa.completedAt) {
         const timeDiff = new Date(wa.completedAt).getTime() - new Date(wa.startedAt).getTime();
         deptMap[catName].totalTime += timeDiff;
@@ -274,13 +274,13 @@ const getMdDashboard = async ({ timeframe = 'today', locationId } = {}) => {
       }
     }
   });
-  
+
   departmentPerformance.push({
     department: 'Job Card',
     active: jcActive,
     queue: jcQueue,
     done: jcDone,
-    avgTime: '-' 
+    avgTime: '-'
   });
 
   // 5. Revenue Breakdown
@@ -405,6 +405,7 @@ const getFloorSupervisorDashboard = async ({ locationId } = {}) => {
     return {
       id: jc.id,
       slug: jc.slug || jc.jobCardNo,
+      jobCardNo: jc.jobCardNo,
       vehicleNo: jc.vehicle?.registrationNo || 'N/A',
       customer: {
         name: jc.customer?.fullName || 'Unknown',
@@ -484,7 +485,6 @@ const getManagerDashboard = async ({ locationId, page = 1, limit = 5 } = {}) => 
   let gatePendingCount = 0;
   let mechActive = 0, mechWaiting = 0;
   let bodyActive = 0, bodyWaiting = 0;
-  let washActive = 0, washWaiting = 0;
   let completedPipelineCount = 0;
 
   const vehicles = allJobCards.map(jc => {
@@ -512,7 +512,7 @@ const getManagerDashboard = async ({ locationId, page = 1, limit = 5 } = {}) => 
     } else if (statusCode.includes('COMPLETED') || statusCode === 'READY_FOR_DELIVERY' || statusCode === 'DELIVERED') {
       completedPipelineCount++;
     }
-    
+
     let stageTone = 'info';
     let displayStage = statusName;
 
@@ -527,8 +527,6 @@ const getManagerDashboard = async ({ locationId, page = 1, limit = 5 } = {}) => 
       stageTone = 'purple';
       displayStage = 'Body Shop';
     } else if (statusCode.includes('WATER_WASH')) {
-      if (statusCode.includes('IN_PROGRESS')) washActive++;
-      else if (statusCode.includes('ASSIGNED')) washWaiting++;
       stageTone = 'info';
       displayStage = 'Water Wash';
     } else if (statusCode.includes('PENDING')) {
@@ -556,6 +554,7 @@ const getManagerDashboard = async ({ locationId, page = 1, limit = 5 } = {}) => 
       id: jc.jobCardNo || jc.id, // Prefer jobCardNo if available
       rawId: jc.id,
       slug: jc.slug || jc.jobCardNo,
+      jobCardNo: jc.jobCardNo,
       vehicleNumber: jc.vehicle?.registrationNo || 'N/A',
       ownerName: jc.customer?.fullName || 'Unknown',
       ownerMobile: jc.customer?.mobileNo || 'N/A',
@@ -573,16 +572,15 @@ const getManagerDashboard = async ({ locationId, page = 1, limit = 5 } = {}) => 
 
   return {
     kpis: [
-      { label: 'Total Today', value: totalTodayCount, color: '#12343B', iconBg: '#E9EEF1' },
-      { label: 'Completed', value: completedTodayCount, color: '#22C7B8', iconBg: '#E8FAF8' },
+      { label: 'Total JC Today', value: totalTodayCount, color: '#12343B', iconBg: '#E9EEF1' },
+      { label: 'JC Completed', value: completedTodayCount, color: '#22C7B8', iconBg: '#E8FAF8' },
       { label: 'JC Pending', value: jcPendingCount, color: '#D97706', iconBg: '#FFF4E5' },
-      { label: 'Delayed', value: delayedCount, color: '#0EA5E9', iconBg: '#EAF8FF' },
+      { label: 'JC Delayed', value: delayedCount, color: '#0EA5E9', iconBg: '#EAF8FF' },
     ],
     pipeline: [
       { label: 'Gate / JC Pending', value: gatePendingCount, meta: 'Awaiting job card', color: '#D97706', bg: '#FFF7ED' },
       { label: 'Mechanical', value: mechActive + mechWaiting, meta: `${mechActive} active - ${mechWaiting} waiting`, color: '#2563EB', bg: '#EFF6FF' },
       { label: 'Body Shop', value: bodyActive + bodyWaiting, meta: `${bodyActive} active - ${bodyWaiting} waiting`, color: '#7C3AED', bg: '#F5F3FF' },
-      { label: 'Water Wash', value: washActive + washWaiting, meta: `${washActive} washing - ${washWaiting} queue`, color: '#0891B2', bg: '#ECFEFF' },
       { label: 'Completed', value: completedPipelineCount, meta: 'Ready for delivery', color: '#059669', bg: '#ECFDF5' },
     ],
     vehicles: vehicles.slice((page - 1) * limit, page * limit),
@@ -639,7 +637,7 @@ const getBodyShopDashboard = async ({ locationId } = {}) => {
   };
 
   // Filter for only job cards that have at least one body shop service
-  const bodyShopJobCards = allJobCards.filter(jc => 
+  const bodyShopJobCards = allJobCards.filter(jc =>
     jc.services?.some(isBodyShopService)
   );
 
@@ -692,6 +690,7 @@ const getBodyShopDashboard = async ({ locationId } = {}) => {
       id: jc.jobCardNo || jc.id,
       rawId: jc.id,
       slug: jc.slug || jc.jobCardNo,
+      jobCardNo: jc.jobCardNo,
       vehicleNumber: jc.vehicle?.registrationNo || 'N/A',
       customerName: jc.customer?.fullName || 'Unknown',
       phone: jc.customer?.mobileNo || 'N/A',
@@ -717,143 +716,6 @@ const getBodyShopDashboard = async ({ locationId } = {}) => {
   };
 };
 
-const getWaterWashDashboard = async ({ locationId } = {}) => {
-  const dateFilter = {};
-  if (locationId) {
-    dateFilter.locationId = locationId;
-  }
-
-  const allJobCards = await prisma.jobCard.findMany({
-    where: dateFilter,
-    include: {
-      customer: true,
-      vehicle: {
-        include: { brand: true }
-      },
-      currentStatus: true,
-      workAssignments: {
-        include: {
-          assignedUser: true
-        }
-      },
-      services: {
-        include: {
-          serviceItem: {
-            include: {
-              category: true
-            }
-          }
-        }
-      }
-    },
-    orderBy: {
-      createdAt: 'desc'
-    }
-  });
-  const bayMap = await buildBayMapForJobCards(allJobCards);
-
-  const isWaterWashService = (service) => {
-    const catName = (service.serviceItem?.category?.name || '').toLowerCase();
-    const catSlug = (service.serviceItem?.category?.slug || '').toLowerCase();
-    const aliases = ['water-wash', 'water_wash', 'water wash', 'wash'];
-    return aliases.some(alias => catName.includes(alias) || catSlug.includes(alias));
-  };
-
-  const isMechanicalService = (service) => {
-    const catName = (service.serviceItem?.category?.name || '').toLowerCase();
-    const aliases = ['mechanical', 'mechanic', 'floor'];
-    return aliases.some(alias => catName.includes(alias));
-  };
-
-  const isBodyShopService = (service) => {
-    const catName = (service.serviceItem?.category?.name || '').toLowerCase();
-    const aliases = ['body-shop', 'body_shop', 'body shop', 'bodyshop', 'paint', 'denting'];
-    return aliases.some(alias => catName.includes(alias));
-  };
-
-  const waterWashJobCards = allJobCards.filter(jc => 
-    jc.services?.some(isWaterWashService)
-  );
-
-  let pendingCount = 0;
-  let assignedCount = 0;
-  let inProgressCount = 0;
-  let completedCount = 0;
-
-  const queue = waterWashJobCards.map(jc => {
-    let statusText = 'UNASSIGNED';
-    let mechanicText = '';
-
-    const statusCode = jc.currentStatus?.statusCode || '';
-
-    if (statusCode.includes('PENDING') || statusCode === 'GATE_ENTRY_CREATED' || statusCode === 'JOB_CARD_CREATED' || statusCode === 'APPROVAL_PENDING') {
-      pendingCount++;
-      statusText = 'UNASSIGNED';
-    } else if (statusCode.includes('ASSIGNED')) {
-      assignedCount++;
-      statusText = 'ASSIGNED';
-    } else if (statusCode.includes('IN_PROGRESS')) {
-      inProgressCount++;
-      statusText = 'ASSIGNED'; // Map to ASSIGNED for frontend display logic
-    } else if (statusCode.includes('READY')) {
-      completedCount++;
-      statusText = 'READY_FOR_DELIVERY';
-    } else if (statusCode.includes('COMPLETED')) {
-      completedCount++;
-      statusText = 'COMPLETED';
-    } else if (statusCode === 'DELIVERED') {
-      statusText = 'DELIVERED';
-    }
-
-    const assignment = jc.workAssignments && jc.workAssignments.length > 0 ? jc.workAssignments[0] : null;
-    if (jc.workAssignments && jc.workAssignments.length > 0) {
-      mechanicText = assignment.assignedUser?.fullName || '';
-    }
-    const bay = assignment && assignment.bayId ? toDashboardBay(bayMap.get(assignment.bayId)) : null;
-
-    const servicesList = jc.services
-      ?.filter(isWaterWashService)
-      .map(s => s.serviceItem?.name)
-      .filter(Boolean)
-      .join(', ') || 'Wash';
-
-    const previousStages = [];
-    if (jc.services?.some(isMechanicalService)) previousStages.push('Mech');
-    if (jc.services?.some(isBodyShopService)) previousStages.push('Body');
-
-    const waitMinutes = Math.max(0, Math.floor((new Date().getTime() - new Date(jc.createdAt).getTime()) / 60000));
-
-    return {
-      id: jc.jobCardNo || jc.id,
-      rawId: jc.id,
-      slug: jc.slug || jc.jobCardNo,
-      vehicleNumber: jc.vehicle?.registrationNo || 'N/A',
-      customer: jc.customer?.fullName || 'Unknown',
-      mobile: jc.customer?.mobileNo || 'N/A',
-      vehicle: `${jc.vehicle?.brand?.name || ''} ${jc.vehicle?.model || ''}`.trim() || 'Unknown',
-      details: `${jc.vehicle?.vehicleColor || ''} - ${jc.vehicle?.fuelType || ''}`.trim() || 'N/A',
-      washService: servicesList,
-      previousStages,
-      assignee: mechanicText,
-      bay,
-      bayName: bay ? bay.bayName : null,
-      status: statusText,
-      waitMinutes,
-      delivery: jc.expectedDeliveryAt ? jc.expectedDeliveryAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : 'N/A'
-    };
-  });
-
-  return {
-    kpis: {
-      pending: pendingCount,
-      assigned: assignedCount,
-      inProgress: inProgressCount,
-      completed: completedCount
-    },
-    queue: queue.filter(q => q.status !== 'DELIVERED')
-  };
-};
-
 const getTvKioskDashboard = async ({ locationId } = {}) => {
   const dateFilter = {};
   if (locationId) {
@@ -864,7 +726,7 @@ const getTvKioskDashboard = async ({ locationId } = {}) => {
     where: {
       ...dateFilter,
       currentStatus: {
-        statusCode: { 
+        statusCode: {
           notIn: [
             'DELIVERED',
             'GATE_ENTRY_CREATED',
@@ -891,11 +753,11 @@ const getTvKioskDashboard = async ({ locationId } = {}) => {
 
   const queue = allJobCards.map(jc => {
     const statusCode = jc.currentStatus?.statusCode || '';
-    
+
     let column = 'MECHANICAL';
     if (statusCode === 'READY_FOR_DELIVERY' || statusCode.includes('DELIVERY')) {
       column = 'READY_FOR_DELIVERY';
-    } else if (statusCode.includes('WATER_WASH') || statusCode.includes('WASH')) {
+    } else if (statusCode.includes('WATER_WASH')) {
       column = 'WATER_WASH';
     } else if (statusCode.includes('BODY_SHOP') || statusCode.includes('PAINT')) {
       column = 'BODY_SHOP';
@@ -911,6 +773,7 @@ const getTvKioskDashboard = async ({ locationId } = {}) => {
     return {
       id: jc.jobCardNo || jc.id,
       rawId: jc.id,
+      jobCardNo: jc.jobCardNo,
       vehicleNumber: jc.vehicle?.registrationNo || 'N/A',
       customerName: jc.customer?.fullName || 'Unknown',
       vehicleInfo: `${jc.vehicle?.brand?.name || ''} ${jc.vehicle?.model || ''}`.trim() || 'Unknown',
@@ -921,7 +784,61 @@ const getTvKioskDashboard = async ({ locationId } = {}) => {
     };
   });
 
-  return queue;
+  // ── Vehicles delivered today ──────────────────────────────────────────────
+  // A vehicle is "delivered today" when its gate entry exitTime falls within
+  // today's date range AND the linked job card's currentStatus is DELIVERED.
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date();
+  todayEnd.setHours(23, 59, 59, 999);
+
+  const exitedEntries = await prisma.gateEntry.findMany({
+    where: {
+      ...(locationId ? { locationId } : {}),
+      exitTime: {
+        gte: todayStart,
+        lte: todayEnd
+      },
+      jobCards: {
+        some: {
+          currentStatus: {
+            statusCode: 'DELIVERED'
+          }
+        }
+      }
+    },
+    include: {
+      customer: {
+        select: { id: true, fullName: true }
+      },
+      vehicle: {
+        include: { brand: true }
+      },
+      jobCards: {
+        where: {
+          currentStatus: {
+            statusCode: 'DELIVERED'
+          }
+        },
+        select: {
+          id: true,
+          jobCardNo: true
+        },
+        take: 1
+      }
+    },
+    orderBy: { exitTime: 'desc' }
+  });
+
+  const deliveredToday = exitedEntries.map(entry => ({
+    id: entry.jobCards[0]?.jobCardNo || `GE-${entry.id}`,
+    vehicleNumber: entry.vehicle?.registrationNo || 'N/A',
+    customerName: entry.customer?.fullName || 'Unknown',
+    vehicleInfo: `${entry.vehicle?.brand?.name || ''} ${entry.vehicle?.model || ''}`.trim() || 'Unknown',
+    exitTime: entry.exitTime
+  }));
+
+  return { queue, deliveredToday };
 };
 
 module.exports = {
@@ -930,6 +847,5 @@ module.exports = {
   getFloorSupervisorDashboard,
   getManagerDashboard,
   getBodyShopDashboard,
-  getWaterWashDashboard,
   getTvKioskDashboard
 };

@@ -19,6 +19,8 @@ const {
   crmGateEntryRoutes
 } = require('../modules/mobileGateEntry/mobileGateEntry.routes');
 const mobileJobCardRoutes = require('../modules/mobileJobCard/mobileJobCard.routes');
+const mobileAdditionalWorkRoutes = require('../modules/mobileAdditionalWork/mobileAdditionalWork.routes');
+const mobileAssignMechanicRoutes = require('../modules/mobileAssignMechanic/mobileAssignMechanic.routes');
 const roleMenuPermissionRoutes = require('../modules/roleMenuPermissions/roleMenuPermission.routes');
 const roleRoutes = require('../modules/roles/role.routes');
 const { serviceCategoryRoutes, crmServiceCategoryRoutes } = require('../modules/service-categories/service-category.routes');
@@ -59,6 +61,8 @@ router.use('/health', healthRoutes);
 router.use('/menus', menuRoutes);
 router.use('/mobile/gate-entry', mobileGateEntryRoutes);
 router.use('/mobile/job-cards', mobileJobCardRoutes);
+router.use('/mobile/additional-work', mobileAdditionalWorkRoutes);
+router.use('/mobile/assign-mechanic', mobileAssignMechanicRoutes);
 router.use('/crm/gate-entries', crmGateEntryRoutes);
 router.use('/gate-entries', webGateEntryRoutes);
 router.use('/roles', roleRoutes);
@@ -83,6 +87,7 @@ router.use('/crm/bays', crmBayRoutes);
 router.use('/storage', storageRoutes);
 
 // Kiosk routes
-router.get('/kiosk/tv', require('../modules/dashboards/dashboard.controller').getTvKioskDashboard);
+const { validateKioskKey } = require('../common/middleware/kioskAuth.middleware');
+router.get('/kiosk/tv', validateKioskKey, require('../modules/dashboards/dashboard.controller').getTvKioskDashboard);
 
 module.exports = router;
