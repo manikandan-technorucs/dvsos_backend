@@ -385,6 +385,7 @@ module.exports = {
   DEPARTMENT_ORDER,
   ASSIGNMENT_PENDING_STATUS_CODES,
   getServiceDepartment,
+  getNextAssignmentPendingDepartment,
   startNextAssignmentPendingStage,
   completeDepartmentAssignmentPendingStage,
   skipDepartmentAssignmentPendingStage,
