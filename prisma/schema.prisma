@@ -851,3 +851,24 @@ model JobCardServiceHistory {
   @@index([actionTypeId])
   @@map("job_card_service_history")
 }
+
+model JobCardChat {
+  id              Int        @id @default(autoincrement())
+  jobCardId       Int        @unique @map("job_card_id")
+  customerId      Int        @map("customer_id")
+  customerMobile  String     @map("customer_mobile") @db.NVarChar(20)
+  unreadCount     Int        @default(0) @map("unread_count")
+  lastMessageText String?    @map("last_message_text") @db.NVarChar(500)
+  lastSenderType  String?    @map("last_sender_type") @db.NVarChar(20)
+  lastMessageAt   DateTime   @default(dbgenerated("sysutcdatetime()")) @map("last_message_at")
+  messagesJson    String     @default("[]") @map("messages_json") @db.NVarChar(Max)
+  createdAt       DateTime   @default(dbgenerated("sysutcdatetime()")) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+
+  @@index([jobCardId])
+  @@index([customerMobile])
+  @@index([unreadCount])
+  @@index([lastMessageAt])
+  @@map("job_card_chats")
+}
+
