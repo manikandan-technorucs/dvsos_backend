@@ -24,7 +24,7 @@ const startServer = async () => {
     // Start background jobs
     // startApprovalFollowupJob(); // Disabled: Additional Work / Approval Timeout notifications
     startProcessStageDelayMonitorJob();
-    
+
     try {
       startFcmSenderJob();
     } catch (jobErr) {
